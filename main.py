@@ -23,9 +23,8 @@ REFERRAL_LEVEL_1 = 0.10  # 10% за первый уровень
 REFERRAL_LEVEL_2 = 0.05  # 5% за второй уровень
 MIN_WITHDRAWAL = 1000    # Минимальная сумма для вывода
 
-# Инициализация базы данных
 def log_to_console(event_type, user_id, username, amount=0, referrer_id=None, level=0, commission=0):
-    """Логирование событий в консоль (вместо Google Sheets)"""
+    """Логирование событий в консоль"""
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     log_message = f"[{timestamp}] {event_type}: User {username} ({user_id})"
     
@@ -39,6 +38,9 @@ def log_to_console(event_type, user_id, username, amount=0, referrer_id=None, le
         log_message += f", Commission: {commission}"
     
     logger.info(log_message)
+
+# Инициализация базы данных
+def init_db():
     conn = sqlite3.connect('referral_bot.db')
     cursor = conn.cursor()
     
@@ -521,6 +523,7 @@ async def admin_add_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Неверный формат. Используйте числа для ID и суммы.")
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка: {e}")
+
 async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
