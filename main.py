@@ -1,18 +1,12 @@
 import logging
 import sqlite3
 import asyncio
-import gspread
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
-from google.oauth2.service_account import Credentials
 import json
 import os
 import uuid
-
-# Глобальная переменная для Google Sheets
-gc = None
-worksheet = None
 
 # Настройка логирования
 logging.basicConfig(
@@ -30,50 +24,21 @@ REFERRAL_LEVEL_2 = 0.05  # 5% за второй уровень
 MIN_WITHDRAWAL = 1000    # Минимальная сумма для вывода
 
 # Инициализация базы данных
-def init_google_sheets():
-    """Инициализация Google Sheets (опционально)"""
-    global gc, worksheet
-    try:
-        # Если есть файл с ключами Google API
-        if os.path.exists('google_credentials.json'):
-            gc = gspread.service_account(filename='google_credentials.json')
-            sheet = gc.open_by_key(GOOGLE_SHEETS_URL)
-            worksheet = sheet.worksheet('Лист1')
-            
-            # Создаем заголовки если их нет
-            try:
-                headers = worksheet.row_values(1)
-                if not headers:
-                    worksheet.update('A1:H1', [['Дата', 'Пользователь', 'Telegram ID', 'Тип события', 'Сумма', 'Реферер', 'Уровень', 'Комиссия']])
-            except:
-                worksheet.update('A1:H1', [['Дата', 'Пользователь', 'Telegram ID', 'Тип события', 'Сумма', 'Реферер', 'Уровень', 'Комиссия']])
-            
-            logger.info("Google Sheets подключены успешно")
-    except Exception as e:
-        logger.warning(f"Google Sheets не подключены: {e}")
-        gc = None
-        worksheet = None
-
-def log_to_sheets(event_type, user_id, username, amount=0, referrer_id=None, level=0, commission=0):
-    """Логирование событий в Google таблицу"""
-    if not worksheet:
-        return
+def log_to_console(event_type, user_id, username, amount=0, referrer_id=None, level=0, commission=0):
+    """Логирование событий в консоль (вместо Google Sheets)"""
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    log_message = f"[{timestamp}] {event_type}: User {username} ({user_id})"
     
-    try:
-        row_data = [
-            datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            username or 'Неизвестно',
-            str(user_id),
-            event_type,
-            str(amount),
-            str(referrer_id) if referrer_id else '',
-            str(level) if level else '',
-            str(commission) if commission else ''
-        ]
-        worksheet.append_row(row_data)
-        logger.info(f"Записано в Google Sheets: {event_type}")
-    except Exception as e:
-        logger.error(f"Ошибка записи в Google Sheets: {e}")
+    if amount:
+        log_message += f", Amount: {amount}"
+    if referrer_id:
+        log_message += f", Referrer: {referrer_id}"
+    if level:
+        log_message += f", Level: {level}"
+    if commission:
+        log_message += f", Commission: {commission}"
+    
+    logger.info(log_message)
     conn = sqlite3.connect('referral_bot.db')
     cursor = conn.cursor()
     
@@ -170,8 +135,8 @@ def create_user(user_id, username, first_name, referrer_id=None):
     conn.commit()
     conn.close()
     
-    # Логируем в Google Sheets
-    log_to_sheets('Регистрация', user_id, username, referrer_id=referrer_id)
+    # Логируем в консоль
+    log_to_console('Регистрация', user_id, username, referrer_id=referrer_id)
     
     return referral_code
 
@@ -218,10 +183,10 @@ def add_order(user_id, amount):
     conn.commit()
     conn.close()
     
-    # Логируем в Google Sheets
+    # Логируем в консоль
     user = get_user(user_id)
     username = user[2] if user else 'Неизвестно'
-    log_to_sheets('Заказ', user_id, username, amount=amount)
+    log_to_console('Заказ', user_id, username, amount=amount)
     
     return order_id
 
@@ -260,11 +225,11 @@ def process_referral_earnings(order_id, user_id, amount):
             WHERE user_id = ?
         ''', (commission, commission, referrer_id))
         
-        # Логируем в Google Sheets
+        # Логируем в консоль
         referrer_user = get_user(referrer_id)
         referrer_username = referrer_user[2] if referrer_user else 'Неизвестно'
-        log_to_sheets('Начисление', referrer_id, referrer_username, 
-                     amount=amount, level=level, commission=commission)
+        log_to_console('Начисление', referrer_id, referrer_username, 
+                      amount=amount, level=level, commission=commission)
         
         # Переходим на следующий уровень
         referrer_id = referrer[4]  # referrer_id следующего уровня
@@ -479,9 +444,9 @@ async def handle_withdrawal_request(update: Update, context: ContextTypes.DEFAUL
                     conn.commit()
                     conn.close()
                     
-                    # Логируем в Google Sheets
-                    log_to_sheets('Заявка на вывод', user_id, update.effective_user.first_name, 
-                                 amount=amount)
+                    # Логируем в консоль
+                    log_to_console('Заявка на вывод', user_id, update.effective_user.first_name, 
+                                  amount=amount)
                     
                     success_text = f"""
 ✅ **Заявка на вывод принята!**
@@ -619,7 +584,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     # Инициализация
     init_db()
-    init_google_sheets()
     
     # Создание приложения
     application = Application.builder().token(BOT_TOKEN).build()
